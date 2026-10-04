@@ -75,6 +75,25 @@ class FileTool(BaseTool):
         except ValueError:
             return False
 
+    def _normalize_content(self, target_path: Path, content: str) -> str:
+        """If writing to a .json file, ensure the content is valid double-quoted JSON."""
+        if target_path.suffix.lower() == ".json":
+            content_str = content.strip()
+            import json
+            import ast
+            try:
+                parsed = json.loads(content_str)
+                return json.dumps(parsed, indent=2)
+            except Exception:
+                pass
+
+            try:
+                parsed = ast.literal_eval(content_str)
+                return json.dumps(parsed, indent=2)
+            except Exception:
+                pass
+        return content
+
     async def execute(
         self,
         action: str,
@@ -111,6 +130,7 @@ class FileTool(BaseTool):
                         output="",
                         error="content is required for write action",
                     )
+                content = self._normalize_content(full_path, content)
                 full_path.parent.mkdir(parents=True, exist_ok=True)
                 async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
                     await f.write(content)
