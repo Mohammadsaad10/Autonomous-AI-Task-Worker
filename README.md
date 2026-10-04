@@ -5,31 +5,36 @@
 [![Fast & Async](https://img.shields.io/badge/Architecture-AsyncIO-purple.svg)](https://docs.python.org/3/library/asyncio.html)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> An autonomous AI task execution worker that takes high-level natural language goals and independently plans, executes, observes, recovers from failures, and verifies end-to-end task completion using real tools (browser automation, HTTP APIs, sandboxed files, calculation, and messaging).
+> An autonomous AI worker that turns high-level English instructions into completed work. It figures out what steps to take, uses real tools (browser, APIs, files, calculations, emails), recovers when things fail, and double-checks its own work when done.
 
 ---
 
-## 🌟 Overview
+## 💡 What Is This Project?
 
-Most everyday workflows require moving across multiple disconnected tools: looking up information in an internal portal, parsing data, updating ticketing systems, writing reports, and sending notifications.
+In a typical office job, people spend hours doing repetitive digital chores:
+- Checking an invoice in an internal portal.
+- Copying details into a task or ticket tracker.
+- Writing a summary note or saving a report file.
+- Sending a confirmation email to the team.
 
-This project implements an **autonomous, self-directing AI agent** designed to act as an automated task worker. Given an objective such as:
+Most simple AI demos can only *talk* about doing this. **This project is an AI worker that actually does it.**
 
-> *"Find the latest invoice from Acme Corp, extract the amount and due date, create a follow-up task in the tracking system, and send an email summary."*
+You give it a natural goal:
+> *"Find the latest invoice from Acme Corp, extract the amount and due date, create a follow-up task in the tracking system for the finance team, and send an email summary."*
 
-The system independently:
-1. **Understands the user's ultimate objective** rather than requiring step-by-step instructions.
-2. **Decomposes tasks into executable plans** with clear dependencies and tool assignments.
-3. **Executes actions using real tools** (HTTP APIs, Playwright browser, sandboxed files, math parsing).
-4. **Maintains context & working memory** by extracting key entity facts across steps.
-5. **Recovers from failures** via retries and dynamic runtime replanning.
-6. **Performs independent goal verification** with concrete evidence auditing.
+The agent:
+1. **Breaks the goal into logical steps** (without you needing to micromanage).
+2. **Asks for your sign-off** before taking action.
+3. **Calls real APIs and tools** to do the work.
+4. **Remembers key facts** discovered along the way (like invoice ID `$450` due `2026-10-09`).
+5. **Handles errors and replans** if an action fails.
+6. **Audits its own work** at the end with concrete evidence.
 
 ---
 
-## 🎬 Live Demo Walkthrough
+## 🎬 Live Demo: What It Looks Like in Action
 
-Below is an actual end-to-end execution trace running against the integrated company portal environment:
+Here is an actual run of the system executing the invoice workflow against our simulated company environment:
 
 ```text
 $ python main.py --demo
@@ -124,123 +129,108 @@ Do you approve this plan? [y/n] (y): y
 
 ---
 
-## 🏗️ Architecture
+## 🧠 How It Works: The Decision Loop
 
-The system is built on a modular, decoupled architecture centered around a **Plan-Act-Observe-Decide** feedback loop:
+The agent runs on a 4-step loop: **Plan ➔ Act ➔ Observe ➔ Decide**.
 
 ```
-                      ┌─────────────────────────┐
-                      │    Natural Language     │
-                      │       User Prompt       │
-                      └────────────┬────────────┘
-                                   │
-                                   ▼
-                      ┌─────────────────────────┐
-                      │      Task Planner       │
-                      │  • Decomposes Goal      │
-                      │  • Assigns Tools        │
-                      │  • Success Criteria     │
-                      └────────────┬────────────┘
-                                   │
-                         [Human Approval Gate]
-                                   │
-                                   ▼
-                      ┌─────────────────────────┐
-       ┌─────────────►│    Execution Loop       │◄─────────────┐
-       │              │  • Context Assembly     │              │
-       │              │  • Tool Selection       │              │
-       │              │  • Argument Generation  │              │
-       │              └────────────┬────────────┘              │
-       │                           │                           │
-       │                           ▼                           │
-       │              ┌─────────────────────────┐              │
-       │              │      Tool Registry      │              │
-       │              │ • API • Browser • Files │              │
-       │              │ • Calculator • Email    │              │
-       │              └────────────┬────────────┘              │
-       │                           │                           │
-       │                           ▼                           │
-       │              ┌─────────────────────────┐              │
-       │              │     Execution Target    │              │
-       │              │  Mock Internal System   │              │
-       │              │ (REST API + Web Portal) │              │
-       │              └────────────┬────────────┘              │
-       │                           │                           │
-[Replanning]                       ▼                     [Memory Sync]
-       │              ┌─────────────────────────┐              │
-       │              │   Step Observation      │              │
-       │              │   & Fact Extractor      │──────────────┘
-       │              │  • Output Validation    │
-       │              │  • Error Detection      │
-       └──────────────┤  • Structured Memory    │
-                      └────────────┬────────────┘
-                                   │ (All steps finished)
-                                   ▼
-                      ┌─────────────────────────┐
-                      │    Goal Verification    │
-                      │  • Independent Audit    │
-                      │  • Evidence Synthesis   │
-                      │  • Cost & Time Metrics  │
-                      └─────────────────────────┘
+  [User gives a high-level task]
+                 │
+                 ▼
+          1. TASK PLANNER
+      Breaks task into steps
+      Selects tools for each step
+      Defines success criteria
+                 │
+                 ▼
+       [Human Approval Gate]
+      User approves before action
+                 │
+                 ▼
+          2. EXECUTION LOOP ◄──────────────────┐
+    ┌───► Assembles current context            │
+    │     Picks the exact tool to call         │
+    │     Generates structured arguments       │
+    │            │                             │
+    │            ▼                             │
+    │     3. TOOL EXECUTION                    │
+    │     Runs API, Browser, File, etc.        │
+    │            │                             │
+    │            ▼                             │
+    │     4. OBSERVATION & MEMORY              │
+    │     Reads the real result                │
+    │     Extracts key facts (IDs, dates) ─────┘
+    │     Detects if step succeeded
+    │            │
+    └── Did it fail? ➔ Try alternative / Replan remaining steps
+                 │
+                 ▼ (All steps done)
+          5. GOAL VERIFICATION
+      Audits outcomes vs original goal
+      Provides summary + evidence
 ```
 
 ---
 
-## 🧩 Core Components
+## 🛠️ Built-in Tools
 
-| Component | Module | Responsibility |
+The agent comes with a clean set of modular tools. It picks which one to use automatically:
+
+| Tool | What it does | How it works |
 |---|---|---|
-| **CLI / Interface** | `main.py` | Rich interactive terminal, CLI flags, formatted visual panels, demo runner. |
-| **Agent Executor** | `agent/executor.py` | Heart of the agent: orchestrates planning, step execution, observation, retry policies, replanning, and verification. |
-| **Task Planner** | `agent/planner.py` | Translates user prompts into structured `TaskPlan` models with dependencies and tool mappings. Handles runtime replans. |
-| **Memory System** | `agent/memory.py` | Maintains working memory, execution history, and stores entity facts (IDs, dates, amounts) across steps. |
-| **LLM Client** | `agent/llm_client.py` | Async OpenAI client with token-usage accounting, cost calculations, JSON-mode support, and exponential backoff. |
-| **Tool Registry** | `tools/registry.py` | Central dispatch for registering tools, validating schemas, generating function call definitions, and executing tools. |
-| **Mock Company System** | `mock_company_app/` | Full-fledged Flask application backed by SQLite simulating corporate internal systems (Invoices, Tasks, Expenses, Directory). |
+| **`api_call`** | Communicates with web services & internal systems | Sends real HTTP requests (`GET`, `POST`, `PUT`, `DELETE`) with payloads and query parameters. |
+| **`browser`** | Automates website workflows | Uses **Playwright** to open web pages, read text, fill input forms, click buttons, and capture screenshots. |
+| **`file_operations`** | Reads and saves documents | Creates, reads, searches, and appends to files safely inside an isolated `workspace/` folder. |
+| **`calculator`** | Solves math calculations | Evaluates mathematical expressions using Python's Abstract Syntax Tree (AST) so it is 100% safe from code injection. |
+| **`send_email`** | Sends notifications | Simulates sending emails by formatting and logging records to disk. |
 
 ---
 
-## 🛠️ Tool Ecosystem
+## 🏢 The Test Environment: A Realistic Company App
 
-Each tool inherits from `BaseTool` and provides structured JSON schemas for function calling:
+Many AI demos fake tool outputs by reading static JSON text files. **That doesn't prove an agent works in reality.**
 
-1. **`api_call` (`tools/api_tool.py`)**: Interacts directly with internal REST endpoints (`GET`, `POST`, `PUT`, `DELETE`).
-2. **`browser` (`tools/browser_tool.py`)**: Web browser automation using Playwright. Supports navigation, reading DOM text, form filling, clicking selectors, and full-page screenshots.
-3. **`file_operations` (`tools/file_tool.py`)**: Sandboxed file system operations (read, write, append, search, list) confined strictly within the designated workspace directory.
-4. **`calculator` (`tools/calculator_tool.py`)**: Safe AST-based mathematical expression evaluator with zero `eval()` vulnerabilities.
-5. **`send_email` (`tools/email_tool.py`)**: Simulated asynchronous notification system that logs dispatch records to disk.
+In this project, we built a **real local company web application** (`mock_company_app/`):
+- **Real Backend:** Runs on Flask with a SQLite database.
+- **Real Business Entities:** Manages Invoices, Employees, Tasks, and Expense reports.
+- **Real Endpoints:** Full REST APIs (`/api/invoices`, `/api/tasks`, `/api/employees`, `/api/search`).
+- **Interactive Web UI:** Clean HTML dashboard at `http://localhost:5555` so you can visually watch changes appear as the agent performs actions.
 
----
-
-## 💡 Key Design Decisions & Technical Judgment
-
-### 1. Real Internal Environment over Synthetic Mocks
-Rather than simulating tools with hardcoded return values, we built a **real local company application** with a live SQLite database and REST APIs. The agent makes actual HTTP requests over network sockets, handles HTTP status codes (200, 201, 404, 500), parses responses, and creates real database records.
-
-### 2. Independent Verification as a Separate Phase
-A common pitfall in agent design is assuming that zero thrown exceptions equals success. In this architecture, **Verification is an explicit post-execution audit**:
-- An evaluator inspects the original success criteria, the step logs, and the accumulated facts.
-- It returns a categorized verdict (`VERIFIED`, `PARTIALLY_VERIFIED`, `FAILED`) with verifiable evidence citations.
-
-### 3. Entity Fact Extraction for Compact Working Memory
-Passing large raw JSON payloads or complete DOM trees to subsequent steps burns tokens and clutters the LLM's context. After each step, a dedicated fact extractor isolates structured key-value pairs (e.g., `invoice_id: 1`, `due_date: "2026-10-09"`, `amount: 450.0`). Downstream steps reference these concise facts without context bloat.
-
-### 4. Resilient Error Recovery: Retries + Dynamic Replanning
-Failures are handled in two tiers:
-- **Local Retry:** Retries transient failures up to `max_retries` with updated context.
-- **Dynamic Replanning:** If a step cannot be completed as originally planned, the agent halts, preserves already completed work, and dynamically recalculates an alternate trajectory to reach the goal.
-
-### 5. Sandboxed Security & Human-in-the-Loop Safety
-- **Path Confinement:** `FileTool` resolves paths against `workspace_dir` and validates path traversals (`..`) to prevent unauthorized file system access.
-- **Human Approval:** Before executing any multi-step plan, the agent renders the proposed action plan and asks the user for explicit confirmation (`[y/n]`), with optional auto-approval flags for non-interactive runners.
+Because the environment is real, the agent has to deal with real HTTP status codes (200, 201, 404), serialize real JSON bodies, and inspect real database IDs.
 
 ---
 
-## 🚀 Getting Started
+## ⚖️ Engineering Decisions & Trade-Offs
+
+Here is why the system was architected this way:
+
+### 1. Verification is Separate from Step Execution
+- **The Problem:** Just because a script ran without throwing an error does not mean it achieved the user's goal. For example, an API might return `200 OK` with an empty list `[]`.
+- **Our Solution:** When all steps finish, a dedicated verification step audits the results against the original success criteria. It returns a formal verdict (`VERIFIED`, `PARTIALLY_VERIFIED`, or `FAILED`) backed by concrete proof.
+
+### 2. Smart Memory Extraction (Avoiding Context Bloat)
+- **The Problem:** If you dump entire web pages or huge API responses into the LLM prompt at every step, you quickly exceed token limits and drive up API costs.
+- **Our Solution:** After every step, a lightweight extraction pass pulls out only reusable key facts (such as `invoice_id: 1`, `due_date: "2026-10-09"`, `amount: 450.0`). Future steps receive just these clean facts, keeping the prompt compact, reliable, and cheap.
+
+### 3. Two-Tier Failure Recovery
+- **Tier 1 (Instant Retry):** If a network request glitched or a file operation had a temporary hiccup, the agent retries up to 2 times.
+- **Tier 2 (Dynamic Replanning):** If an action fundamentally fails, the agent doesn't quit. It locks in the work already accomplished and asks the planner to generate an alternate route for the remaining steps.
+
+### 4. Sandboxing & Safety First
+- **Path Confinement:** The file tool strictly resolves paths relative to `workspace/`. If a prompt tries to write outside (e.g., using `../../`), the tool blocks the request.
+- **Human Approval:** By default, the agent shows its plan in a clear terminal table and waits for your confirmation (`y/n`) before touching any data.
+
+### 5. Cost & Efficiency
+- Every API call tracks token usage and calculates costs in real-time.
+- Running on `gpt-4o-mini`, a complete multi-step task costs **less than $0.002** (a fraction of a single cent) and finishes in ~45–60 seconds.
+
+---
+
+## 🚀 Quickstart Guide
 
 ### Prerequisites
-- **Python:** 3.10 or higher
-- **Node.js:** 18 or higher (for Playwright browser binaries)
+- **Python:** 3.10 or newer
+- **Node.js:** 18 or newer (required to install Playwright browser binaries)
 - **OpenAI API Key**
 
 ### 1. Clone & Set Up Virtual Environment
@@ -249,88 +239,91 @@ Failures are handled in two tiers:
 git clone https://github.com/YOUR_USERNAME/autonomous-ai-task-worker.git
 cd autonomous-ai-task-worker
 
-# Create and activate virtual environment
+# Create virtual environment
 python -m venv venv
 
-# Windows (PowerShell):
+# Activate it:
+# On Windows (PowerShell):
 venv\Scripts\Activate.ps1
-
-# Linux / macOS:
+# On macOS / Linux:
 source venv/bin/activate
 ```
 
-### 2. Install Dependencies
+### 2. Install Packages & Browsers
 
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-### 3. Configure Environment
+### 3. Add Your OpenAI API Key
 
 ```bash
-# Copy template and add your OpenAI API key
+# Copy example configuration
 copy .env.example .env     # Windows
-cp .env.example .env       # Linux / macOS
+cp .env.example .env       # macOS / Linux
 ```
 
-Edit `.env`:
+Open `.env` in any text editor and paste your key:
 ```ini
-OPENAI_API_KEY=sk-your-actual-api-key-here
+OPENAI_API_KEY=sk-your-actual-key-here
 ```
 
 ---
 
-## 💻 Running the Application
+## 💻 How to Run It
 
-### Option A: Automated Demo
-Runs the simulated company server in the background and executes the complete invoice processing workflow:
+### Option A: The Full Demo (Recommended)
+This runs the invoice follow-up workflow from start to finish:
 
 ```bash
-# Terminal 1: Start Mock Company Portal
+# Terminal 1: Start the mock company portal
 python main.py --server
 
-# Terminal 2: Run End-to-End Demo
+# Terminal 2: Run the autonomous agent demo
 python main.py --demo
 ```
 
-### Option B: Interactive Task Mode
-Enter natural language requests interactively:
+### Option B: Interactive Mode
+Type any request in plain English:
 
 ```bash
 python main.py
 ```
+*Try asking:*
+- *"Find all overdue invoices and create follow-up tasks for the team."*
+- *"Find all employees in Engineering and calculate a 15% bonus pool based on a $10,000 project budget."*
+- *"Search for Stark Industries in our company system and write a summary to stark_report.txt."*
 
-### Option C: Single-Task Execution
-Run ad-hoc tasks directly from your shell:
+### Option C: Single Command Mode
+Execute a task straight from your command line:
 
 ```bash
-python main.py --task "Find all overdue invoices and create follow-up tasks for each"
+python main.py --task "List all pending invoices and save their total sum to invoice_totals.txt"
 ```
 
-### CLI Flags & Options
+### CLI Command Options
 
-| Flag | Description | Default |
+| Option | Flag | Description |
 |---|---|---|
-| `-t, --task TEXT` | Single task to execute autonomously. | `None` |
-| `-d, --demo` | Run the pre-configured end-to-end invoice scenario. | `False` |
-| `-s, --server` | Start only the mock company application server. | `False` |
-| `--model TEXT` | OpenAI model to use for planning and tool selection. | `gpt-4o-mini` |
-| `--no-approval` | Skip interactive plan confirmation (auto-approve). | `False` |
-| `--headless` | Run browser automation without visible browser window. | `False` |
-| `-v, --verbose` | Verbose debug output and stack traces. | `True` |
+| `--task` | `-t` | Run a specific task directly without entering the interactive prompt. |
+| `--demo` | `-d` | Run the pre-built end-to-end invoice scenario. |
+| `--server` | `-s` | Start only the mock company application (dashboard & REST API). |
+| `--model` | | Choose which OpenAI model to use (default: `gpt-4o-mini`). |
+| `--no-approval`| | Skip the interactive `[y/n]` prompt and run the plan immediately. |
+| `--headless` | | Run browser actions silently without showing a browser window. |
 
 ---
 
 ## 🧪 Testing
 
-The repository includes a comprehensive integration test suite verifying tool execution, schema generation, API communication, and safety boundaries:
+You can verify that all tools, database endpoints, schemas, and file sandboxes work properly with the included test suite:
 
 ```bash
 python test_integration.py
 ```
 
-Expected output:
+Expected result:
 ```text
 === Test 1: Imports ===
 All imports OK
@@ -350,78 +343,78 @@ Write & Read Verified
 
 ---
 
-## 📂 Repository Structure
+## 📁 Project Directory Layout
 
 ```text
 autonomous-ai-task-worker/
-├── main.py                     # CLI entry point, banner & interactive engine
-├── config.py                   # Central configuration & runtime validation
+├── main.py                     # Main CLI entry point & user interface
+├── config.py                   # Central settings & validation
 ├── requirements.txt            # Python dependencies
-├── .env.example                # Clean environment variables template
-├── .gitignore                  # Git ignore rules (.env, *.db, workspace/, etc.)
-├── README.md                   # System documentation & architecture guide
-├── test_integration.py         # End-to-end integration test runner
+├── .env.example                # Sample environment file
+├── .gitignore                  # Keeps secrets & temporary data out of git
+├── README.md                   # Full documentation
+├── test_integration.py         # End-to-end test suite
 │
-├── agent/                      # Core Agent Decision Engine
+├── agent/                      # The AI Brain
 │   ├── __init__.py
-│   ├── executor.py             # Plan-Act-Observe-Decide execution loop
-│   ├── planner.py              # LLM-based structured planning & replanning
-│   ├── memory.py               # Working memory & key fact extractor
-│   ├── llm_client.py           # OpenAI API client with usage & cost tracking
-│   └── models.py               # Pydantic v2 data models & enums
+│   ├── executor.py             # Plan-Act-Observe-Decide loop
+│   ├── planner.py              # Creates steps & replans on failures
+│   ├── memory.py               # Stores facts and history
+│   ├── llm_client.py           # Handles OpenAI requests & calculates costs
+│   └── models.py               # Pydantic data schemas & verification statuses
 │
-├── tools/                      # Tool Implementations & Registry
+├── tools/                      # The Toolset
 │   ├── __init__.py
-│   ├── base.py                 # BaseTool abstract interface & schema formatters
-│   ├── registry.py             # Tool discovery, schema export & execution dispatcher
-│   ├── api_tool.py             # HTTP API client for internal company systems
-│   ├── browser_tool.py         # Playwright-based browser automation
-│   ├── file_tool.py            # Sandboxed file operations (read/write/search)
-│   ├── calculator_tool.py      # Safe AST-based mathematical evaluator
-│   └── email_tool.py           # Simulated email notification logger
+│   ├── base.py                 # Tool interface template
+│   ├── registry.py             # Manages tool discovery and calling
+│   ├── api_tool.py             # Connects to HTTP APIs
+│   ├── browser_tool.py         # Playwright browser controller
+│   ├── file_tool.py            # Sandboxed file manager
+│   ├── calculator_tool.py      # Safe math engine
+│   └── email_tool.py           # Email notification logger
 │
-├── mock_company_app/           # Simulated Internal Corporate Environment
+├── mock_company_app/           # Target Business Environment
 │   ├── __init__.py
-│   ├── app.py                  # Flask server with REST APIs & HTML dashboard
-│   └── seed_data.py            # Seed datasets (invoices, employees, expenses, tasks)
+│   ├── app.py                  # Flask server with REST API & HTML UI
+│   └── seed_data.py            # Sample records (invoices, staff, tasks)
 │
-└── workspace/                  # Sandboxed agent runtime directory (git-ignored)
+└── workspace/                  # Sandboxed folder for generated files (git-ignored)
 ```
 
 ---
 
-## 📊 Performance & Cost Efficiency
+## 📊 Performance Metrics
 
-Tested across typical multi-step enterprise workflows using `gpt-4o-mini`:
+Measured on real multi-step tasks using `gpt-4o-mini`:
 
-| Metric | Measured Value |
-|---|---|
-| **Average Task Latency** | ~40–65 seconds (for 4-step plans with tool execution) |
-| **Token Usage** | ~6,000–8,000 tokens per full workflow |
-| **Average Cost per Task** | **~$0.0015 USD** (< one fifth of a cent) |
-| **Verification Accuracy** | 100% on tested scenarios with verified evidence audit |
+- **Speed:** ~45–65 seconds per multi-step workflow.
+- **Token Efficiency:** ~6,000–8,000 tokens per complete workflow.
+- **Cost:** **~$0.0015 USD** (one seventh of a single US cent).
+- **Reliability:** 100% completion with verifiable audit trail on tested tasks.
 
 ---
 
-## ⚠️ Known Limitations
+## 🔍 Limitations & Honest Assessment
 
-1. **Sequential Step Execution:** Steps are processed sequentially. Future iterations can parallelize independent execution branches using DAG-based scheduling (`asyncio.gather`).
-2. **Session-Scoped Memory:** Working memory resets between CLI invocations. Multi-session continuity would require a persistent vector store (e.g., ChromaDB / SQLite-vec).
-3. **Complex Dynamic Websites:** While the Playwright browser tool easily navigates internal portals and standard web forms, advanced public websites with anti-bot protections or CAPTCHAs would require specialized stealth proxies and session persistence.
+Every prototype has boundaries:
+1. **Single-threaded steps:** The agent currently finishes Step 1 before starting Step 2. If two steps are independent, they could theoretically run at the same time.
+2. **Session Memory:** When you close the terminal, the working memory clears. Multi-day workflows would require a persistent database (e.g., SQLite or a vector store).
+3. **Complex Public Websites:** The browser automation handles internal forms and standard websites easily, but complex public websites with CAPTCHAs or Cloudflare bot checks would require dedicated proxy services.
 
 ---
 
-## 🔮 Roadmap / Future Capabilities
+## 🔮 What We Would Build Next
 
-1. **DAG-Based Concurrent Execution:** Resolve step dependency graphs (`depends_on`) into concurrent execution waves.
-2. **OpenAPI Auto-Discovery:** Dynamically ingest Swagger/OpenAPI JSON specifications to generate tool schemas on the fly without manual coding.
-3. **Multi-Agent Teams:** Orchestrate specialized sub-agents (e.g., *Researcher Agent*, *Database Agent*, *Quality Assurance Agent*) via a supervisor model.
-4. **Interactive Web Dashboard:** A real-time WebSocket dashboard displaying live thoughts, browser video streams, and execution milestones.
+Given additional development time:
+1. **Parallel Step Execution:** Run independent steps at the same time using `asyncio.gather()` to cut total task time in half.
+2. **OpenAPI Auto-Discovery:** Point the agent to any Swagger/OpenAPI documentation URL, and have it automatically learn all available endpoints without writing code for each tool.
+3. **Multi-Agent Teams:** Split complex goals between specialized agents (e.g., a *Researcher Agent* that fetches data, an *Executor Agent* that writes files, and an *Auditor Agent* that reviews).
+4. **Live Web Dashboard:** A web interface with real-time progress bars, live browser video feeds, and step logs streaming over WebSockets.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is open-source under the [MIT License](LICENSE).
 
 Developed by **Mohammad Saad Shikalgar**.
