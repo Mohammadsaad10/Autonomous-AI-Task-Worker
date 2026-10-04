@@ -48,7 +48,7 @@ def print_banner():
         "[bold cyan]║[/bold cyan]   An AI agent that understands goals, plans actions,         [bold cyan]║[/bold cyan]\n"
         "[bold cyan]║[/bold cyan]   uses tools, handles failures, and verifies results.        [bold cyan]║[/bold cyan]\n"
         "[bold cyan]║[/bold cyan]                                                              [bold cyan]║[/bold cyan]\n"
-        "[bold cyan]║[/bold cyan]   Built for CentrAlign AI Engineering Internship             [bold cyan]║[/bold cyan]\n"
+        "[bold cyan]║[/bold cyan]   Autonomous Task-Execution & Decision Engine               [bold cyan]║[/bold cyan]\n"
         "[bold cyan]╚══════════════════════════════════════════════════════════════╝[/bold cyan]"
     )
     console.print(banner_text)
