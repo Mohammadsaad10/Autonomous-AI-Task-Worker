@@ -105,4 +105,4 @@ print(f"Write: {result.output}")
 result = asyncio.run(ft.execute(action="read", path=os.path.join(workspace, "test.txt")))
 print(f"Read: {result.output}")
 
-print("\n✅ All integration tests passed!")
+print("\n[SUCCESS] All integration tests passed!")
