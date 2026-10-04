@@ -236,8 +236,8 @@ Here is why the system was architected this way:
 ### 1. Clone & Set Up Virtual Environment
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/autonomous-ai-task-worker.git
-cd autonomous-ai-task-worker
+git clone https://github.com/Mohammadsaad10/Autonomous-AI-Task-Worker.git
+cd Autonomous-AI-Task-Worker
 
 # Create virtual environment
 python -m venv venv
@@ -346,7 +346,7 @@ Write & Read Verified
 ## 📁 Project Directory Layout
 
 ```text
-autonomous-ai-task-worker/
+Autonomous-AI-Task-Worker/
 ├── main.py                     # Main CLI entry point & user interface
 ├── config.py                   # Central settings & validation
 ├── requirements.txt            # Python dependencies
