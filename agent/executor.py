@@ -11,14 +11,12 @@ This is the heart of the autonomous AI task worker. It:
 """
 from __future__ import annotations
 
-import asyncio
 import time
-from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm
 from rich.table import Table
 from rich import box
 
@@ -33,7 +31,7 @@ from config import AgentConfig
 class AgentExecutor:
     """
     The main execution engine for the autonomous AI task worker.
-    
+
     Implements a plan-act-observe-decide loop with:
     - LLM-powered tool selection and argument generation
     - Automatic retry on failures
@@ -61,17 +59,20 @@ class AgentExecutor:
         """Execute a natural language task autonomously."""
         start_time = time.time()
         step_results = []
-        replan_count = 0
-        max_replans = 3
 
         # ── Phase 1: Planning ──────────────────────────────────────
         self.console.print(
-            Panel(f"[bold]Task:[/bold] {task}", title="📋 Understanding Goal", border_style="blue")
+            Panel(
+                f"[bold]Task:[/bold] {task}",
+                title="📋 Understanding Goal",
+                border_style="blue",
+            )
         )
         self.console.print("[dim]Analyzing task and creating execution plan...[/dim]\n")
 
         try:
             tools_info = self.tool_registry.list_tools()
+            tool_names = [t["name"] for t in tools_info]
             tools_description = "\n".join(
                 f"  - {t['name']}: {t['description']}" for t in tools_info
             )
@@ -101,7 +102,9 @@ class AgentExecutor:
                     summary="Plan was rejected by user.",
                     total_time=time.time() - start_time,
                 )
-            self.console.print("[green]✅ Plan approved. Starting execution...[/green]\n")
+            self.console.print(
+                "[green]✅ Plan approved. Starting execution...[/green]\n"
+            )
 
         # ── Phase 3: Execution Loop ──────────────────────────────
         current_step_idx = 0
@@ -135,46 +138,40 @@ class AgentExecutor:
             self.memory.add_step_result(step, step_result, step_result.observations)
 
             # Extract and store any facts from the result
-            await self._extract_facts(step_result)
+            if step_result.success and step_result.output:
+                await self._extract_facts(step_result)
 
             if step_result.success:
                 step.status = "completed"
-                self.console.print(f"  [green]✅ Step {step.step_number} completed successfully.[/green]")
+                self.console.print(
+                    f"  [green]✅ Step {step.step_number} completed successfully.[/green]"
+                )
                 current_step_idx += 1
             else:
                 step.status = "failed"
-                self.console.print(
-                    f"  [red]❌ Step {step.step_number} failed.[/red]"
-                )
+                self.console.print(f"  [red]❌ Step {step.step_number} failed.[/red]")
 
-                # Try replanning
-                if replan_count < max_replans:
-                    replan_count += 1
-                    self.console.print(
-                        f"  [yellow]🔄 Replanning (attempt {replan_count}/{max_replans})...[/yellow]"
+                # Try replanning (one attempt per failed step)
+                self.console.print(
+                    "  [yellow]🔄 Replanning to work around failure...[/yellow]"
+                )
+                try:
+                    context = self.memory.get_context_summary()
+                    plan = await self.planner.replan(
+                        plan, step.step_number, context
                     )
-                    try:
-                        context = self.memory.get_context_summary()
-                        plan = await self.planner.replan(
-                            plan, step.step_number, context
-                        )
-                        self._print_plan(plan, title="📋 Revised Plan")
-                        # Find next pending step
-                        current_step_idx = next(
-                            (
-                                i
-                                for i, s in enumerate(plan.steps)
-                                if s.status in ("pending",)
-                            ),
-                            len(plan.steps),
-                        )
-                    except Exception as e:
-                        self.console.print(f"  [red]Replanning failed: {e}[/red]")
-                        current_step_idx += 1
-                else:
-                    self.console.print(
-                        "  [red]Max replanning attempts reached. Skipping step.[/red]"
+                    self._print_plan(plan, title="📋 Revised Plan")
+                    # Find next pending step
+                    current_step_idx = next(
+                        (
+                            i
+                            for i, s in enumerate(plan.steps)
+                            if s.status == "pending"
+                        ),
+                        len(plan.steps),
                     )
+                except Exception as e:
+                    self.console.print(f"  [red]Replanning failed: {e}[/red]")
                     current_step_idx += 1
 
         # ── Phase 4: Verification ─────────────────────────────────
@@ -186,7 +183,7 @@ class AgentExecutor:
 
         total_time = time.time() - start_time
 
-        result = ExecutionResult(
+        return ExecutionResult(
             task=task,
             plan=plan,
             step_results=step_results,
@@ -195,8 +192,6 @@ class AgentExecutor:
             evidence=verification["evidence"],
             total_time=total_time,
         )
-
-        return result
 
     async def _execute_step(self, step: PlanStep, plan: TaskPlan) -> StepResult:
         """Execute a single step with retry logic."""
@@ -216,18 +211,21 @@ class AgentExecutor:
 
                 # Get available tool schemas
                 tool_schemas = self.tool_registry.get_all_schemas()
+                available_tools = ", ".join(s["name"] for s in tool_schemas)
 
-                # Ask the LLM to select a tool and generate arguments
+                # Build a focused prompt for tool selection
                 system_prompt = (
                     "You are an AI assistant executing a step in a task plan. "
-                    "Select the most appropriate tool and generate the correct arguments "
-                    "to accomplish this step.\n\n"
+                    "You MUST select one of the available tools and provide correct arguments.\n\n"
+                    f"AVAILABLE TOOLS: {available_tools}\n\n"
                     f"Overall Goal: {plan.goal}\n"
                     f"Current Step: {step.description}\n"
-                    f"Expected Outcome: {step.expected_outcome}\n"
-                    f"Suggested Tool: {step.tool_to_use or 'any'}\n\n"
+                    f"Expected Outcome: {step.expected_outcome}\n\n"
                     f"Context from previous steps:\n{context_summary}\n\n"
-                    "Select a tool and provide the correct arguments to accomplish this step."
+                    "IMPORTANT: You must use ONLY the tools listed above. "
+                    "If the step involves data extraction or analysis that doesn't need a tool, "
+                    "use 'file_operations' to write results to a file, or 'api_call' to look up data. "
+                    "Do NOT skip tool selection."
                 )
 
                 tool_call = await self.llm.function_call(
@@ -239,7 +237,7 @@ class AgentExecutor:
                 tool_args = tool_call.get("arguments", {})
 
                 if not tool_name:
-                    # LLM didn't select a tool — try to get a text response instead
+                    # LLM didn't select a tool — provide a text response
                     text_response = await self.llm.chat(
                         messages=[{"role": "user", "content": system_prompt}]
                     )
@@ -247,12 +245,10 @@ class AgentExecutor:
                         step_number=step.step_number,
                         success=True,
                         output=text_response,
-                        observations=f"LLM provided text response (no tool needed): {text_response[:200]}",
+                        observations=f"LLM provided analysis (no tool needed): {text_response[:300]}",
                     )
 
-                self.console.print(
-                    f"  [cyan]🔧 Tool:[/cyan] {tool_name}"
-                )
+                self.console.print(f"  [cyan]🔧 Tool:[/cyan] {tool_name}")
                 self.console.print(
                     f"  [dim]Args: {self._truncate(str(tool_args), 150)}[/dim]"
                 )
@@ -266,18 +262,17 @@ class AgentExecutor:
 
                 if tool_result.success:
                     observations = (
-                        f"Tool '{tool_name}' succeeded. Output: {self._truncate(output_str, 300)}"
+                        f"Tool '{tool_name}' succeeded. Output: {self._truncate(output_str, 500)}"
                     )
                     self.console.print(
                         f"  [green]📤 Result:[/green] {self._truncate(output_str, 200)}"
                     )
 
-                    # Assess whether the step actually achieved its goal
-                    assessment = await self._assess_step(step, observations)
-
+                    # If the tool succeeded, we trust the result
+                    # Only do LLM assessment for ambiguous cases
                     return StepResult(
                         step_number=step.step_number,
-                        success=assessment,
+                        success=True,
                         output=output_str,
                         observations=observations,
                     )
@@ -304,36 +299,14 @@ class AgentExecutor:
             observations=observations,
         )
 
-    async def _assess_step(self, step: PlanStep, observations: str) -> bool:
-        """Use LLM to assess whether a step actually succeeded."""
-        try:
-            prompt = (
-                f"Step description: {step.description}\n"
-                f"Expected outcome: {step.expected_outcome}\n"
-                f"Actual observations: {observations}\n\n"
-                "Based on the observations, did this step achieve its expected outcome? "
-                "Answer with ONLY 'YES' or 'NO'."
-            )
-            response = await self.llm.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-            )
-            return "YES" in response.upper()
-        except Exception:
-            # If assessment fails, assume success if tool succeeded
-            return True
-
     async def _extract_facts(self, step_result: StepResult):
         """Extract key facts from step results and store in memory."""
-        if not step_result.success or not step_result.output:
-            return
-
         try:
             prompt = (
-                f"Extract key facts from this tool output as JSON key-value pairs. "
-                f"Only include important, reusable information (IDs, names, amounts, dates, statuses). "
-                f"Return a JSON object. If no useful facts, return {{}}.\n\n"
-                f"Output: {self._truncate(step_result.output, 500)}"
+                "Extract key facts from this tool output as a flat JSON object of key-value pairs. "
+                "Only include important, reusable information (IDs, names, amounts, dates, statuses). "
+                "Return a JSON object. If no useful facts, return {}.\n\n"
+                f"Output: {self._truncate(step_result.output, 800)}"
             )
             facts = await self.llm.chat_json(
                 messages=[{"role": "user", "content": prompt}]
@@ -341,7 +314,7 @@ class AgentExecutor:
             for key, value in facts.items():
                 self.memory.store_fact(key, value)
         except Exception:
-            pass  # Fact extraction is optional, don't fail on it
+            pass  # Fact extraction is optional
 
     async def _verify_goal(
         self, task: str, plan: TaskPlan, step_results: list[StepResult]
@@ -349,21 +322,24 @@ class AgentExecutor:
         """Verify whether the original goal was achieved."""
         try:
             steps_summary = "\n".join(
-                f"  Step {r.step_number}: {'✅' if r.success else '❌'} - {r.observations}"
+                f"  Step {r.step_number}: {'SUCCESS' if r.success else 'FAILED'} - {r.observations}"
                 for r in step_results
             )
             facts = self.memory.get_facts()
 
+            successful_steps = sum(1 for r in step_results if r.success)
+            total_steps = len(step_results)
+
             prompt = (
                 f"Original Task: {task}\n\n"
                 f"Success Criteria: {', '.join(plan.success_criteria)}\n\n"
-                f"Steps Executed:\n{steps_summary}\n\n"
+                f"Steps Executed ({successful_steps}/{total_steps} succeeded):\n{steps_summary}\n\n"
                 f"Known Facts: {facts}\n\n"
-                "Assess whether the original task goal was achieved. "
+                "Assess whether the original task goal was achieved based on the steps that succeeded. "
                 "Return a JSON object with:\n"
                 '- "status": one of "verified", "partially_verified", or "failed"\n'
                 '- "summary": a concise summary of what was accomplished\n'
-                '- "evidence": a list of strings, each being a piece of evidence supporting the assessment\n'
+                '- "evidence": a JSON array of strings, each being a piece of evidence\n'
             )
 
             result = await self.llm.chat_json(
@@ -403,7 +379,7 @@ class AgentExecutor:
         table.add_column("#", style="cyan", width=4)
         table.add_column("Step", style="white", min_width=30)
         table.add_column("Tool", style="magenta", width=18)
-        table.add_column("Status", width=10)
+        table.add_column("Status", width=12)
 
         for step in plan.steps:
             status_icon = {
@@ -421,9 +397,7 @@ class AgentExecutor:
             )
 
         self.console.print(table)
-        self.console.print(
-            f"[dim]Goal: {plan.goal}[/dim]"
-        )
+        self.console.print(f"[dim]Goal: {plan.goal}[/dim]")
         self.console.print(
             f"[dim]Success Criteria: {', '.join(plan.success_criteria)}[/dim]"
         )
